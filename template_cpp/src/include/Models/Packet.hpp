@@ -8,32 +8,30 @@ struct Header
     uint64_t id;
     MessageType type;
     uint16_t length;
+    uint32_t forwardedBy;
 
     Header() = default;
 
-    Header(uint64_t _id, MessageType _type)
-        : id(_id), type(_type), length(0)
+    Header(const uint64_t _id, const MessageType _type, const uint32_t forwardedBy)
+        : id(_id), type(_type), length(0), forwardedBy(forwardedBy)
     {
     }
 };
 
-struct Package
+struct Packet
 {
     Header header;
     std::unique_ptr<Message> body;
 
-    // Default constructor OK
-    Package() = default;
+    Packet() = default;
 
-    // Deep-copy constructor
-    Package(const Package& other)
+    Packet(const Packet& other)
         : header(other.header)
     {
         if (other.body) body = other.body->clone();
     }
 
-    // Deep-copy assignment
-    Package& operator=(const Package& other)
+    Packet& operator=(const Packet& other)
     {
         if (this == &other) return *this;
         header = other.header;
@@ -42,7 +40,6 @@ struct Package
         return *this;
     }
 
-    // Move operations: keep defaults (efficient)
-    Package(Package&&) noexcept = default;
-    Package& operator=(Package&&) noexcept = default;
+    Packet(Packet&&) noexcept = default;
+    Packet& operator=(Packet&&) noexcept = default;
 };

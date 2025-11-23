@@ -5,29 +5,54 @@
 #include <vector>
 #include <chrono>
 #include <algorithm>
+#include <functional>
 
 #include "IdGenerator.hpp"
 #include "PackageProcessor.cpp"
 
-PerfectLinks::PerfectLinks(Socket& _socket, uint32_t _nodeId, const std::string& path, bool startAck)
-    : nodeId(_nodeId)
-      , idGenerator(_nodeId)
+PerfectLinks::PerfectLinks(Socket& _socket, uint32_t _nodeId, const std::string& path)
+    : idGenerator(_nodeId)
+      , nodeId(_nodeId)
       , socket(_socket)
       , logger(path)
-      , delivery_tracker(128)
-      , stopAckReceiver(false)
-      , startAckReceiver(startAck)
+      , _deliveryTracker(128)
+      , stopReceiver(false)
 {
 }
 
 PerfectLinks::~PerfectLinks()
 {
-    StopAckReceiver();
+    StopReceiver();
     StopResender();
     logger.FlushNow();
 }
 
-void PerfectLinks::send_in_chunks(const sockaddr_in& dest, std::vector<Package>& batch, bool writeLog)
+void PerfectLinks::SendMessageInChunks(const sockaddr_in& dest, std::vector<Packet>& batch, const uint32_t destNodeID)
+{
+    for (auto& pkt : batch)
+    {
+        AddPending(pkt, dest, destNodeID);
+    }
+    send_in_chunks(dest, batch, true);
+}
+
+void PerfectLinks::SendMessageInChunksNoWrite(const sockaddr_in& dest, std::vector<Packet>& batch,
+                                              const uint32_t destNodeID)
+{
+    for (auto& pkt : batch)
+    {
+        AddPending(pkt, dest, destNodeID);
+    }
+    send_in_chunks(dest, batch, false);
+}
+
+
+void PerfectLinks::SendNoWrite(const sockaddr_in& dest, std::vector<Packet>& batch)
+{
+    send_in_chunks(dest, batch, false);
+}
+
+void PerfectLinks::send_in_chunks(const sockaddr_in& dest, std::vector<Packet>& batch, bool writeLog)
 {
     const int maxBatch = 8;
     size_t offset = 0;
@@ -43,139 +68,123 @@ void PerfectLinks::send_in_chunks(const sockaddr_in& dest, std::vector<Package>&
             logger.LogSentRange(batch.data() + offset, static_cast<size_t>(take));
         }
         std::free(bytes);
-        offset += take;
+        offset += static_cast<size_t>(take);
+    }
+}
+
+std::vector<Packet> PerfectLinks::ReceivePackets(sockaddr_in& sender_addr) const
+{
+    size_t out = 0;
+    char* bytes = socket.Receive(out, sender_addr);
+
+    auto packets = PackageProcessor::DecodeMany(bytes, out);
+    std::free(bytes);
+    return packets;
+}
+
+std::pair<std::vector<Packet>, std::vector<Packet>> PerfectLinks::process(std::vector<Packet>& packets)
+{
+    std::vector<Packet> deliveredNow;
+    deliveredNow.reserve(packets.size());
+
+    std::vector<Packet> ackBatch;
+    ackBatch.reserve(packets.size());
+
+    for (auto& pkt : packets)
+    {
+        std::cout << "processing packet from:" << pkt.header.forwardedBy << std::endl;
+        if (pkt.header.type == regular)
+        {
+            Packet ackPackage;
+            ackPackage.header = Header(
+                pkt.header.id,
+                acknowledgment,
+                nodeId
+            );
+            ackPackage.body = std::make_unique<Acknowledgment>();
+            ackBatch.push_back(std::move(ackPackage));
+
+            {
+                const uint32_t id = IdGenerator::getNodeId(pkt.header.id);
+                const uint32_t counter = IdGenerator::getCounter(pkt.header.id);
+                if (_deliveryTracker.hasDelivered(id, counter))
+                {
+                    continue;
+                }
+
+                _deliveryTracker.markDelivered(id, counter);
+            }
+
+            deliveredNow.push_back(std::move(pkt));
+        }
+        else if (pkt.header.type == acknowledgment)
+        {
+            ProcessPacket(pkt);
+        }
+    }
+
+    return {deliveredNow, ackBatch};
+}
+
+void PerfectLinks::DeliverPackets(std::vector<Packet>& packets, sockaddr_in sender_addr)
+{
+    auto [deliveredNow, ackBatch] = process(packets);
+    if (!deliveredNow.empty())
+    {
+        if (_fifoPacketProcessFunc)
+        {
+            _fifoPacketProcessFunc(deliveredNow);
+        }
+    }
+
+    if (!ackBatch.empty())
+    {
+        SendNoWrite(sender_addr, ackBatch);
     }
 }
 
 void PerfectLinks::Receive()
 {
-    while (true)
-    {
-        size_t out = 0;
-        sockaddr_in sender_addr{};
-        char* bytes = socket.Receive(out, sender_addr);
-
-        if (bytes == nullptr)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            continue;
-        }
-
-        auto packets = PackageProcessor::DecodeMany(bytes, out);
-
-        std::vector<Package> deliveredNow;
-        deliveredNow.reserve(packets.size());
-
-        std::vector<Package> ackBatch;
-        ackBatch.reserve(packets.size());
-
-        for (auto& pkt : packets)
-        {
-            if (pkt.header.type == regular)
-            {
-                Package ackPackage;
-                ackPackage.header = Header(
-                    pkt.header.id,
-                    acknowledgment
-                );
-                ackPackage.body = std::make_unique<Acknowledgment>();
-                ackBatch.push_back(std::move(ackPackage));
-
-                {
-                    uint32_t id = IdGenerator::getNodeId(pkt.header.id);
-                    uint32_t counter = IdGenerator::getCounter(pkt.header.id);
-                    if (delivery_tracker.hasDelivered(id, counter))
-                    {
-                        continue;
-                    }
-
-                    delivery_tracker.markDelivered(id, counter);
-                }
-
-                deliveredNow.push_back(std::move(pkt));
-            }
-            else if (pkt.header.type == acknowledgment)
-            {
-                ProcessPacket(pkt);
-            }
-        }
-
-        if (!deliveredNow.empty())
-        {
-            logger.LogReceived(deliveredNow);
-        }
-
-        if (!ackBatch.empty())
-        {
-            send_in_chunks(sender_addr, ackBatch);
-        }
-
-        delete[] bytes;
-    }
+    sockaddr_in sender_addr{};
+    auto packets = ReceivePackets(sender_addr);
+    DeliverPackets(packets, sender_addr);
 }
 
-void PerfectLinks::Send(in_addr_t ip, uint16_t port, int packageCounter)
+uint64_t PerfectLinks::GetNextId()
 {
-    if (startAckReceiver)
-    {
-        StartAckReceiver();
-        StartResender();
-    }
-
-    sockaddr_in dest{};
-    dest.sin_family = AF_INET;
-    dest.sin_port = htons(port);
-    dest.sin_addr.s_addr = ip;
-
-    std::cout << "Sending to: " << inet_ntoa(dest.sin_addr) << ":" << port << std::endl;
-
-
-    std::vector<Package> packages;
-    packages.reserve(packageCounter);
-
-    for (int k = 0; k < packageCounter; ++k)
-    {
-        Package pkt;
-        pkt.header = Header(
-            idGenerator.next(),
-            regular
-        );
-
-        pkt.body = std::make_unique<Regular>();
-        if (auto* regularMsg = dynamic_cast<Regular*>(pkt.body.get()))
-        {
-            regularMsg->number = IdGenerator::getCounter(pkt.header.id);
-        }
-
-        auto id = pkt.header.id;
-        {
-            std::lock_guard lock(pendingMutex);
-            PendingEntry entry;
-            entry.pkg = pkt;
-            entry.dest = dest;
-            entry.nextSend = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
-            entry.backoff = std::chrono::milliseconds(50);
-            entry.retries = 0;
-            pendingPackages.emplace(id, std::move(entry));
-        }
-
-        packages.push_back(std::move(pkt));
-    }
-
-    send_in_chunks(dest, packages, true);
+    return idGenerator.next();
 }
 
-void PerfectLinks::ProcessPacket(Package& package)
+void PerfectLinks::AddPending(const Packet& pkt, const sockaddr_in& dest, uint32_t destNodeId)
 {
-    switch (package.header.type)
+    std::lock_guard lock(pendingMutex);
+
+    PendingKey key{pkt.header.id, destNodeId};
+
+    PendingEntry entry;
+    entry.pkg = pkt;
+    entry.dest = dest;
+    entry.nextSend = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+    entry.backoff = std::chrono::milliseconds(50);
+
+    pendingPackages.emplace(key, entry);
+}
+
+void PerfectLinks::ProcessPacket(const Packet& pkt)
+{
+    switch (pkt.header.type)
     {
     case regular:
         break;
     case acknowledgment:
         {
+            const uint64_t msgId = pkt.header.id;
+            const uint32_t srcNode = pkt.header.forwardedBy;
+
+            const PendingKey key{msgId, srcNode};
+
             std::lock_guard lock(pendingMutex);
-            uint64_t acked_id = package.header.id;
-            pendingPackages.erase(acked_id);
+            pendingPackages.erase(key);
             break;
         }
     default:
@@ -183,65 +192,98 @@ void PerfectLinks::ProcessPacket(Package& package)
     }
 }
 
-void PerfectLinks::StartAckReceiver()
+void PerfectLinks::StartReceiver(UpperDeliverFn fn)
 {
-    stopAckReceiver = false;
-    ackReceiverThread = std::thread(&PerfectLinks::AckReceiverLoop, this);
+    _fifoPacketProcessFunc = std::move(fn);
+    stopReceiver = false;
+    receiverThread = std::thread(&PerfectLinks::ReceiverLoop, this);
 }
 
-void PerfectLinks::StopAckReceiver()
+void PerfectLinks::StopReceiver()
 {
-    stopAckReceiver = true;
-    if (ackReceiverThread.joinable())
-        ackReceiverThread.join();
+    stopReceiver = true;
+    if (receiverThread.joinable())
+        receiverThread.join();
 }
 
-void PerfectLinks::AckReceiverLoop()
+void PerfectLinks::ReceiverLoop()
 {
-    while (!stopAckReceiver)
+    while (!stopReceiver)
     {
         Receive();
     }
 }
 
+std::vector<PendingEntry> PerfectLinks::get_packets_to_send()
+{
+    std::vector<PendingEntry> toSend;
+
+    const auto now = std::chrono::steady_clock::now();
+    {
+        std::lock_guard lock(pendingMutex);
+        for (auto & pendingPackage : pendingPackages)
+        {
+            auto& entry = pendingPackage.second;
+            if (entry.nextSend <= now)
+            {
+                toSend.emplace_back(entry);
+                entry.backoff = std::min(entry.backoff * 2, MAX_BACKOFF);
+                entry.nextSend = now + entry.backoff;
+            }
+        }
+    }
+
+    return toSend;
+}
+
 void PerfectLinks::StartResender()
 {
     stopResend = false;
-    resendThread = std::thread([this]()
+
+    resendThread = std::thread([this]
     {
         while (!stopResend)
         {
             std::this_thread::sleep_for(RESENDER_TICK);
 
-            std::vector<std::pair<uint64_t, PendingEntry>> toSend;
-            const auto now = std::chrono::steady_clock::now();
+            std::vector<PendingEntry> toResend = get_packets_to_send();
+            if (toResend.empty())
+                continue;
+
+            struct DestHash
             {
-                std::lock_guard lock(pendingMutex);
-                for (auto it = pendingPackages.begin(); it != pendingPackages.end(); ++it)
+                size_t operator()(const sockaddr_in& s) const noexcept
                 {
-                    auto& id = it->first;
-                    auto& entry = it->second;
-                    if (entry.nextSend <= now)
-                    {
-                        toSend.emplace_back(id, entry);
-                        entry.retries++;
-                        entry.backoff = std::min(entry.backoff * 2, MAX_BACKOFF);
-                        entry.nextSend = now + entry.backoff;
-                    }
+                    return std::hash<uint32_t>()(s.sin_addr.s_addr) ^
+                        std::hash<uint16_t>()(s.sin_port);
                 }
+            };
+
+            struct DestEq
+            {
+                bool operator()(const sockaddr_in& a, const sockaddr_in& b) const noexcept
+                {
+                    return a.sin_addr.s_addr == b.sin_addr.s_addr &&
+                        a.sin_port == b.sin_port;
+                }
+            };
+
+            std::unordered_map<sockaddr_in, std::vector<Packet>, DestHash, DestEq> batches;
+            batches.reserve(toResend.size());
+
+            for (auto& entry : toResend)
+            {
+                batches[entry.dest].push_back(entry.pkg);
             }
 
-            for (auto& pair : toSend)
+            for (auto& [dest, batch] : batches)
             {
-                auto& entry = pair.second;
-                size_t size;
-                char* bytes = PackageProcessor::EncodePackage(entry.pkg, size);
-                socket.Send(bytes, reinterpret_cast<const sockaddr*>(&entry.dest), size);
-                std::free(bytes);
+                SendNoWrite(dest, batch);
             }
         }
     });
 }
+
 
 void PerfectLinks::StopResender()
 {

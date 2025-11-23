@@ -4,6 +4,8 @@
 
 #include "parser.hpp"
 #include <signal.h>
+
+#include "FIFOBroadcast.hpp"
 #include "PackageProcessor.cpp"
 
 #include "PerfectLinks.hpp"
@@ -11,8 +13,7 @@
 
 struct Config
 {
-    int messageCount;
-    unsigned long processId;
+    uint32_t messageCount;
 };
 
 Config ParseConfigFile(const std::string& path);
@@ -36,7 +37,7 @@ static void stop(int)
         // think of the order.
         g_link->logger.FlushNow();
         g_link->socket.Stop();
-        g_link->StopAckReceiver();
+        g_link->StopReceiver();
         g_link->StopResender();
     }
 
@@ -91,18 +92,21 @@ int main(int argc, char** argv)
     try
     {
         auto config = ParseConfigFile(parser.configPath());
-        if (config.processId == parser.id())
+        std::vector<Node> nodes;
+        nodes.reserve(hosts.size());
+        for (auto& host : hosts)
         {
-            g_link = std::make_unique<PerfectLinks>(socket, static_cast<uint32_t>(parser.id()), parser.outputPath(),
-                                                    false);
-            g_link->Receive();
+            Node n = {static_cast<uint32_t>(host.id), host.ip, host.port};
+            nodes.push_back(n);
         }
-        else
-        {
-            g_link = std::make_unique<PerfectLinks>(socket, static_cast<uint32_t>(parser.id()), parser.outputPath(),
-                                                    true);
-            g_link->Send(hosts[config.processId - 1].ip, hosts[config.processId - 1].port, config.messageCount);
-        }
+
+        auto instance = FIFOBroadcast(
+            nodes,
+            socket,
+            parser.outputPath(),
+            static_cast<uint32_t>(parser.id()));
+
+        instance.Broadcast(config.messageCount);
     }
     catch (int exceptionCode)
     {
@@ -142,9 +146,9 @@ Config ParseConfigFile(const std::string& path)
     }
 
     Config cfg{};
-    if (!(file >> cfg.messageCount >> cfg.processId))
+    if (!(file >> cfg.messageCount))
     {
-        throw std::runtime_error("Invalid file format: expected two integers separated by space");
+        throw std::runtime_error("Invalid file format: expected integer");
     }
 
     return cfg;

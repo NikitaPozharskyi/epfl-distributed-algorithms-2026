@@ -18,6 +18,11 @@ uint32_t IdGenerator::getCounter(uint64_t id)
 
 uint64_t IdGenerator::next()
 {
-    uint32_t count = counter.fetch_add(1, std::memory_order_relaxed);
+    const uint32_t count = counter.fetch_add(1, std::memory_order_relaxed);
     return static_cast<uint64_t>(nodeId) << 32 | count;
+}
+
+uint64_t IdGenerator::make(const uint32_t id, const uint32_t ctr)
+{
+    return (static_cast<uint64_t>(id) << 32) | ctr;
 }

@@ -4,13 +4,15 @@
 #include <cstdint>
 #include <mutex>
 
-class DeliveryTracker {
+#include "IDeliveryTracker.hpp"
+
+class DeliveryTracker : public IDeliveryTracker
+{
     std::vector<std::vector<uint64_t>> delivered;
     std::mutex mtx;
 
 public:
-
     DeliveryTracker(size_t maxSenders);
-    bool hasDelivered(uint32_t senderId, uint32_t seqNum);
-    void markDelivered(uint32_t senderId, uint32_t seqNum);
+    bool hasDelivered(uint32_t senderId, uint32_t seqNum) override;
+    void markDelivered(uint32_t senderId, uint32_t seqNum) override;
 };

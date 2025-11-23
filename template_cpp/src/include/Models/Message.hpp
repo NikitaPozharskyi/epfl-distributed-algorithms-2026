@@ -24,8 +24,8 @@ struct Acknowledgment : Message
 
 struct Regular : Message
 {
-    uint32_t number;
-    std::unique_ptr<Message> clone() const override {
+    std::unique_ptr<Message> clone() const override
+    {
         return std::make_unique<Regular>(*this);
     }
 };

@@ -6,7 +6,7 @@
 #include <mutex>
 #include <atomic>
 
-#include "Models/Package.hpp"
+#include "Models/Packet.hpp"
 
 class ProcessLogger
 {
@@ -14,9 +14,9 @@ public:
     explicit ProcessLogger(const std::string& path);
     ~ProcessLogger();
 
-    void LogSent(const std::vector<Package>& outs);
-    void LogSentRange(const Package* pkts, size_t count);
-    void LogReceived(const std::vector<Package>& ins);
+    void LogSent(const std::vector<Packet>& outs);
+    void LogSentRange(const Packet* pkts, size_t count);
+    void LogReceived(const std::vector<Packet>& ins);
 
     void FlushNow();
 

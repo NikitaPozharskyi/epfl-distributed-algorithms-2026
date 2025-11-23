@@ -23,22 +23,19 @@ ProcessLogger::~ProcessLogger()
         logFile.close();
 }
 
-void ProcessLogger::LogSent(const std::vector<Package>& outs)
+void ProcessLogger::LogSent(const std::vector<Packet>& outs)
 {
     std::lock_guard lock(bufferMutex);
     for (const auto& pkg : outs)
     {
         if (pkg.header.type != regular) continue;
-        if (auto* msg = dynamic_cast<Regular*>(pkg.body.get()))
-        {
-            std::ostringstream oss;
-            oss << "b " << msg->number << "\n";
-            buffer.emplace_back(oss.str());
-        }
+        std::ostringstream oss;
+        oss << "b " << IdGenerator::getCounter(pkg.header.id) << "\n";
+        buffer.emplace_back(oss.str());
     }
 }
 
-void ProcessLogger::LogSentRange(const Package* pkts, size_t count)
+void ProcessLogger::LogSentRange(const Packet* pkts, size_t count)
 {
     if (!pkts || count == 0) return;
     std::lock_guard lock(bufferMutex);
@@ -46,28 +43,22 @@ void ProcessLogger::LogSentRange(const Package* pkts, size_t count)
     {
         const auto& pkg = pkts[i];
         if (pkg.header.type != regular) continue;
-        if (auto* msg = dynamic_cast<Regular*>(pkg.body.get()))
-        {
-            std::ostringstream oss;
-            oss << "b " << msg->number << "\n";
-            buffer.emplace_back(oss.str());
-        }
+        std::ostringstream oss;
+        oss << "b " << IdGenerator::getCounter(pkg.header.id) << "\n";
+        buffer.emplace_back(oss.str());
     }
 }
 
-void ProcessLogger::LogReceived(const std::vector<Package>& ins)
+void ProcessLogger::LogReceived(const std::vector<Packet>& ins)
 {
     std::lock_guard lock(bufferMutex);
     for (const auto& pkg : ins)
     {
         if (pkg.header.type != regular) continue;
-        if (auto* msg = dynamic_cast<Regular*>(pkg.body.get()))
-        {
-            std::ostringstream oss;
-            oss << "d " << IdGenerator::getNodeId(pkg.header.id)
-                << " " << msg->number << "\n";
-            buffer.emplace_back(oss.str());
-        }
+        std::ostringstream oss;
+        oss << "d " << IdGenerator::getNodeId(pkg.header.id)
+            << " " << IdGenerator::getCounter(pkg.header.id) << "\n";
+        buffer.emplace_back(oss.str());
     }
 }
 
