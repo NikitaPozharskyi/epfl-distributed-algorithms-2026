@@ -1,11 +1,12 @@
 #include "../include/PerfectLinks.hpp"
 
-#include <iostream>
+#include <algorithm>
+#include <arpa/inet.h>
+#include <chrono>
+#include <functional>
+#include <string>
 #include <thread>
 #include <vector>
-#include <chrono>
-#include <algorithm>
-#include <functional>
 
 #include "IdGenerator.hpp"
 #include "PackageProcessor.cpp"
@@ -15,7 +16,6 @@ PerfectLinks::PerfectLinks(Socket& _socket, uint32_t _nodeId, const std::string&
       , nodeId(_nodeId)
       , socket(_socket)
       , logger(path)
-      , _deliveryTracker(128)
       , stopReceiver(false)
 {
 }
@@ -92,7 +92,6 @@ std::pair<std::vector<Packet>, std::vector<Packet>> PerfectLinks::process(std::v
 
     for (auto& pkt : packets)
     {
-        std::cout << "processing packet from:" << pkt.header.forwardedBy << std::endl;
         if (pkt.header.type == regular)
         {
             Packet ackPackage;
@@ -103,17 +102,6 @@ std::pair<std::vector<Packet>, std::vector<Packet>> PerfectLinks::process(std::v
             );
             ackPackage.body = std::make_unique<Acknowledgment>();
             ackBatch.push_back(std::move(ackPackage));
-
-            {
-                const uint32_t id = IdGenerator::getNodeId(pkt.header.id);
-                const uint32_t counter = IdGenerator::getCounter(pkt.header.id);
-                if (_deliveryTracker.hasDelivered(id, counter))
-                {
-                    continue;
-                }
-
-                _deliveryTracker.markDelivered(id, counter);
-            }
 
             deliveredNow.push_back(std::move(pkt));
         }

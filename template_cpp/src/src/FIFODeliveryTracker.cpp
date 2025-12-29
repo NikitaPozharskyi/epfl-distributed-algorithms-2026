@@ -27,9 +27,10 @@ bool FIFODeliveryTracker::markSeenAndCheckFirst(
     auto& mp = receivedFrom[senderId - 1];
     auto [it, inserted] = mp.try_emplace(seqNum, Bitmask{});
 
-    if (inserted)
+    auto& storedForSender = storedPackets[senderId - 1];
+    if (inserted || storedForSender.find(seqNum) == storedForSender.end())
     {
-        storedPackets[senderId - 1][seqNum] = pkt;
+        storedForSender[seqNum] = pkt;
     }
 
     auto& bm = it->second;
@@ -67,10 +68,15 @@ void FIFODeliveryTracker::markSeen(uint32_t senderId, uint32_t seqNum, uint32_t 
 
 int FIFODeliveryTracker::countSeen(uint32_t senderId, uint32_t seqNum)
 {
-    const auto& [lo, hi] = receivedFrom[senderId - 1][seqNum];
+    const auto& senderMap = receivedFrom[senderId - 1];
+    const auto it = senderMap.find(seqNum);
+    if (it == senderMap.end())
+    {
+        return 0;
+    }
 
-    return __builtin_popcountll(lo) +
-        __builtin_popcountll(hi);
+    const auto& [lo, hi] = it->second;
+    return __builtin_popcountll(lo) + __builtin_popcountll(hi);
 }
 
 bool FIFODeliveryTracker::hasMajority(uint32_t senderId, uint32_t seqNum)

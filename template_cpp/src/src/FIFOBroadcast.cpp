@@ -1,7 +1,5 @@
 #include "FIFOBroadcast.hpp"
 
-#include <iostream>
-
 FIFOBroadcast::FIFOBroadcast(
     const std::vector<Node>& nodes,
     Socket& socket,
@@ -60,9 +58,10 @@ void FIFOBroadcast::Broadcast(uint32_t amount)
     for (const auto& node : _nodes)
     {
         if (node.id == _links.nodeId)
+        {
             continue;
+        }
 
-        std::cout<<"Sending to node: "<<node.id<<std::endl;
         auto dest = _destinationMap.GetDestinationByID(node.id);
         if (write)
         {
@@ -84,8 +83,6 @@ void FIFOBroadcast::OnPacketsFromPL(std::vector<Packet>& packets)
 
     for (auto& pkt : packets)
     {
-        std::cout << "I am :" << this->_links.nodeId << " got packet from: " << pkt.header.forwardedBy << " seq: " <<
-            IdGenerator::getCounter(pkt.header.id) << " for nodeID:" << IdGenerator::getNodeId(pkt.header.id);
         const uint64_t msgId = pkt.header.id;
         const uint32_t sender = IdGenerator::getNodeId(msgId);
         uint32_t seq = IdGenerator::getCounter(msgId);
@@ -104,7 +101,6 @@ void FIFOBroadcast::OnPacketsFromPL(std::vector<Packet>& packets)
 
         while (_tracker.readyToDeliver(s, next))
         {
-            // get stored packet (from cache or map)
             Packet& pkt = _tracker.getPacket(s, next);
             toDeliver.push_back(pkt);
 
@@ -120,11 +116,17 @@ void FIFOBroadcast::OnPacketsFromPL(std::vector<Packet>& packets)
 
 void FIFOBroadcast::Rebroadcast(std::vector<Packet> packets)
 {
+    if (packets.empty())
+    {
+        return;
+    }
+
     for (auto& node : _nodes)
     {
         if (node.id == _links.nodeId)
             continue;
 
-        _links.SendMessageInChunksNoWrite(_destinationMap.GetDestinationByID(node.id), packets, node.id);
+        auto dest = _destinationMap.GetDestinationByID(node.id);
+        _links.SendMessageInChunksNoWrite(dest, packets, node.id);
     }
 }

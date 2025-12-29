@@ -13,7 +13,6 @@
 #include <chrono>
 #include <functional>
 
-#include "DeliveryTracker.hpp"
 #include "IDeliveryStrategy.hpp"
 #include "ProcessLogger.hpp"
 #include "Models/PendingEntry.hpp"
@@ -54,8 +53,6 @@ public:
     ProcessLogger logger;
 
 private:
-    DeliveryTracker _deliveryTracker;
-
     std::thread receiverThread;
     std::atomic<bool> stopReceiver;
 

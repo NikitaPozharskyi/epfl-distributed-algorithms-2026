@@ -1,5 +1,6 @@
 #include <chrono>
 #include <iostream>
+#include <memory>
 #include <thread>
 
 #include "parser.hpp"
@@ -24,13 +25,9 @@ static void stop(int)
 {
     // reset signal handlers to default
     std::cerr << "[SIGTERM] Node  stopping.\n";
-    std::cout << "[SIGTERM] Node  stopping.\n";
 
     signal(SIGTERM, SIG_DFL);
     signal(SIGINT, SIG_DFL);
-
-    // immediately stop network packet processing
-    std::cout << "Immediately stopping network packet processing.\n";
 
     if (g_link)
     {
@@ -40,9 +37,6 @@ static void stop(int)
         g_link->StopReceiver();
         g_link->StopResender();
     }
-
-    // write/flush output file if necessary
-    std::cout << "Writing output.\n";
 
     // exit directly from signal handler
     exit(0);
@@ -60,34 +54,13 @@ int main(int argc, char** argv)
     Parser parser(argc, argv);
     parser.parse();
 
-    std::cout << std::endl;
-
-    std::cout << "My PID: " << getpid() << "\n";
-    std::cout << "From a new terminal type `kill -SIGINT " << getpid() << "` or `kill -SIGTERM "
-        << getpid() << "` to stop processing packets\n\n";
-
-    std::cout << "My ID: " << parser.id() << "\n\n";
-
-    std::cout << "List of resolved hosts is:\n";
-    std::cout << "==========================\n";
     auto hosts = parser.hosts();
-
-    for (auto& host : hosts)
-    {
-        std::cout << host.id << "\n";
-        std::cout << "Human-readable IP: " << host.ipReadable() << "\n";
-        std::cout << "Machine-readable IP: " << host.ip << "\n";
-        std::cout << "Human-readabale Port: " << host.portReadable() << "\n";
-        std::cout << "Machine-readabale Port: " << host.port << "\n";
-        std::cout << "\n";
-    }
-
 
     unsigned long my_index = parser.id() - 1;
     const auto me = hosts[my_index];
-    std::cout << "My IP: " << me.ipReadable() << "\n";
-    std::cout << "My Port: " << me.portReadable() << "\n";
     auto socket = Socket(me.ip, me.port);
+
+    std::unique_ptr<FIFOBroadcast> fifoBroadcast;
 
     try
     {
@@ -100,32 +73,23 @@ int main(int argc, char** argv)
             nodes.push_back(n);
         }
 
-        auto instance = FIFOBroadcast(
+        fifoBroadcast = std::make_unique<FIFOBroadcast>(
             nodes,
             socket,
             parser.outputPath(),
             static_cast<uint32_t>(parser.id()));
 
-        instance.Broadcast(config.messageCount);
+        fifoBroadcast->Broadcast(config.messageCount);
+    }
+    catch (const std::exception& ex)
+    {
+        std::cerr << "Exception: " << ex.what() << "\n";
+        return 1;
     }
     catch (int exceptionCode)
     {
-        std::cout << "Exception: " << exceptionCode << "\n";
+        return exceptionCode;
     }
-
-    std::cout << "\n";
-
-    std::cout << "Path to output:\n";
-    std::cout << "===============\n";
-    std::cout << parser.outputPath() << "\n\n";
-
-    std::cout << "Path to config:\n";
-    std::cout << "===============\n";
-    std::cout << parser.configPath() << "\n\n";
-
-    std::cout << "Doing some initialization...\n\n";
-
-    std::cout << "Broadcasting and delivering messages...\n\n";
 
     // After a process finishes broadcasting,
     // it waits forever for the delivery of messages.
