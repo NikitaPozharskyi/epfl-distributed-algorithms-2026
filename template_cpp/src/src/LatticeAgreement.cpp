@@ -83,6 +83,36 @@ Packet LatticeAgreement::Accept(Proposal proposal, Packet pkt)
     return BuildNackPacket(pkt.header.id, _links.nodeId, acceptedValueVector);
 }
 
-void LatticeAgreement::Propose(Proposal)
+void LatticeAgreement::Propose(const std::vector<Proposal>& proposals) const
 {
+    constexpr std::size_t BATCH_SIZE = 8;
+
+    const std::size_t nodeCount = _nodes.size();
+    if (nodeCount == 0)
+        return;
+
+    const std::size_t totalRounds = proposals.size();
+
+    for (std::size_t base = 0; base < totalRounds; base += BATCH_SIZE)
+    {
+        const std::size_t end =
+            std::min(base + BATCH_SIZE, totalRounds);
+
+        // Batch of up to 8 rounds
+        for (std::size_t r = base; r < end; ++r)
+        {
+            const Proposal& p = proposals[r];
+
+            Packet pkt;
+
+
+            for (const auto& node : _nodes)
+            {
+                SendProposal(node, p);
+            }
+        }
+
+        // Optional: yield / flush / sleep if you want fairness
+        // std::this_thread::yield();
+    }
 }

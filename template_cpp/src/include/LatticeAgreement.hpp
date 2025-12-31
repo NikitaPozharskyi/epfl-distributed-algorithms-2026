@@ -26,9 +26,9 @@ public:
     Packet Accept(Proposal proposal, Packet pkt);
 
     // Proposer
-    void Propose(Proposal);
-    void ProcessAck(Proposal);
-    void ProcessNack(Proposal);
+    void Propose(const std::vector<Proposal>& proposals) const;
+    void ProcessAck(Proposal proposal);
+    void ProcessNack(Proposal proposal);
 
     void Run();
 
