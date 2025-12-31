@@ -2,6 +2,7 @@
 #include <unordered_set>
 
 #include "PerfectLinks.hpp"
+#include "Models/Node.hpp"
 
 
 struct Proposal;
@@ -15,6 +16,7 @@ private:
     Config& _cfg;
     // map represents accepted value mapped to round number (shot)
     std::unordered_map<uint32_t, std::unordered_set<uint32_t>> _acceptedValues;
+    std::vector<Node> _nodes;
 
 public:
     explicit LatticeAgreement(PerfectLinks& links, Config& cfg);

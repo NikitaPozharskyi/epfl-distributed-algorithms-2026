@@ -85,5 +85,4 @@ Packet LatticeAgreement::Accept(Proposal proposal, Packet pkt)
 
 void LatticeAgreement::Propose(Proposal)
 {
-
 }
