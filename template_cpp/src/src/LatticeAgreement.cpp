@@ -98,18 +98,28 @@ void LatticeAgreement::Propose(const std::vector<Proposal>& proposals) const
         const std::size_t end =
             std::min(base + BATCH_SIZE, totalRounds);
 
+        std::vector<Packet> packets;
+        packets.reserve(end - base);
         // Batch of up to 8 rounds
         for (std::size_t r = base; r < end; ++r)
         {
             const Proposal& p = proposals[r];
 
             Packet pkt;
+            pkt.header = Header(
+                _links.GetNextId(),
+                latticeAgreement,
+                _links.nodeId
+            );
+            pkt.body = std::make_unique<Regular>();
 
+            packets.push_back(pkt);
+        }
 
-            for (const auto& node : _nodes)
-            {
-                SendProposal(node, p);
-            }
+        for (const auto& node : _nodes)
+        {
+
+            _links.SendMessageInChunksWrite()
         }
 
         // Optional: yield / flush / sleep if you want fairness
