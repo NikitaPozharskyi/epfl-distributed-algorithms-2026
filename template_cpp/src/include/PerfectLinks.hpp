@@ -13,11 +13,10 @@
 #include <chrono>
 #include <functional>
 
-#include "IDeliveryStrategy.hpp"
 #include "ProcessLogger.hpp"
 #include "Models/PendingEntry.hpp"
 
-using UpperDeliverFn = std::function<void(std::vector<Packet>&)>;
+using UpperDeliverFn = std::function<void(std::vector<Packet>&, sockaddr_in&)>;
 
 struct PendingKey
 {
@@ -43,7 +42,7 @@ struct PendingKeyEq
     }
 };
 
-class PerfectLinks : public IDeliveryStrategy
+class PerfectLinks
 {
     IdGenerator idGenerator;
 
@@ -60,23 +59,24 @@ private:
     std::atomic<bool> stopResend = false;
     static constexpr std::chrono::milliseconds RESENDER_TICK{10};
 
-    UpperDeliverFn _fifoPacketProcessFunc;
+    UpperDeliverFn upperDeliveryFunc;
     std::mutex pendingMutex;
     std::unordered_map<PendingKey, PendingEntry, PendingKeyHash, PendingKeyEq> pendingPackages;
 
-    void send_in_chunks(const sockaddr_in& dest, std::vector<Packet>& batch, bool writeLog = false);
+    void SendInChunks(const sockaddr_in& dest, std::vector<Packet>& batch, bool writeLog = false);
 
-    void DeliverPackets(std::vector<Packet>& packets, sockaddr_in sender_addr);
-    void ProcessPacket(const Packet& pkt);
+    // delivering or "executing protocol on packet receiving"
+    void DeliverPackets(std::vector<Packet>& packets, sockaddr_in& sender_addr);
+
+    void ProcessAck(const Packet& pkt);
     void ReceiverLoop();
 
 public:
     static constexpr std::chrono::milliseconds MAX_BACKOFF{1000};
     uint64_t GetNextId();
 
-    // IDeliveryStrategy
-    std::vector<PendingEntry> get_packets_to_send() override;
-    std::pair<std::vector<Packet>, std::vector<Packet>> process(std::vector<Packet>& packets) override;
+    std::vector<PendingEntry> get_packets_to_send();
+    void process(std::vector<Packet>& packets);
 
     explicit PerfectLinks(Socket& _socket, uint32_t _nodeId, const std::string& path);
     ~PerfectLinks();
@@ -84,11 +84,14 @@ public:
     void AddPending(const Packet& pkt, const sockaddr_in& dest, uint32_t destNodeId);
     void Receive();
 
+    // Send with logging to file
+    void SendMessageInChunksWrite(const sockaddr_in& dest, std::vector<Packet>& batch, uint32_t destNodeID);
+
+    // send without logging to file
     void SendNoWrite(const sockaddr_in& dest, std::vector<Packet>& batch);
-
     void SendMessageInChunksNoWrite(const sockaddr_in& dest, std::vector<Packet>& batch, const uint32_t destNodeID);
-    void SendMessageInChunks(const sockaddr_in& dest, std::vector<Packet>& batch, uint32_t destNodeID);
 
+    // receive packet from sender
     std::vector<Packet> ReceivePackets(sockaddr_in& sender_addr) const;
 
     void StartReceiver(UpperDeliverFn fn);

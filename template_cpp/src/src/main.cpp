@@ -6,16 +6,13 @@
 #include "parser.hpp"
 #include <signal.h>
 
-#include "FIFOBroadcast.hpp"
-#include "PackageProcessor.cpp"
+#include "LatticeAgreement.hpp"
+#include "PacketEncoder.cpp"
 
 #include "PerfectLinks.hpp"
 #include "Socket.hpp"
+#include "Models/Node.hpp"
 
-struct Config
-{
-    uint32_t messageCount;
-};
 
 Config ParseConfigFile(const std::string& path);
 
@@ -60,26 +57,24 @@ int main(int argc, char** argv)
     const auto me = hosts[my_index];
     auto socket = Socket(me.ip, me.port);
 
-    std::unique_ptr<FIFOBroadcast> fifoBroadcast;
-
     try
     {
-        auto config = ParseConfigFile(parser.configPath());
-        std::vector<Node> nodes;
-        nodes.reserve(hosts.size());
-        for (auto& host : hosts)
-        {
-            Node n = {static_cast<uint32_t>(host.id), host.ip, host.port};
-            nodes.push_back(n);
-        }
-
-        fifoBroadcast = std::make_unique<FIFOBroadcast>(
-            nodes,
-            socket,
-            parser.outputPath(),
-            static_cast<uint32_t>(parser.id()));
-
-        fifoBroadcast->Broadcast(config.messageCount);
+        // auto config = ParseConfigFile(parser.configPath());
+        // std::vector<Node> nodes;
+        // nodes.reserve(hosts.size());
+        // for (auto& host : hosts)
+        // {
+        //     Node n = {static_cast<uint32_t>(host.id), host.ip, host.port};
+        //     nodes.push_back(n);
+        // }
+        //
+        // fifoBroadcast = std::make_unique<FIFOBroadcast>(
+        //     nodes,
+        //     socket,
+        //     parser.outputPath(),
+        //     static_cast<uint32_t>(parser.id()));
+        //
+        // fifoBroadcast->Broadcast(config.messageCount);
     }
     catch (const std::exception& ex)
     {
@@ -110,9 +105,42 @@ Config ParseConfigFile(const std::string& path)
     }
 
     Config cfg{};
-    if (!(file >> cfg.messageCount))
+
+    // Read header: p vs ds
+    if (!(file >> cfg.rounds >> cfg.vs >> cfg.ds))
     {
-        throw std::runtime_error("Invalid file format: expected integer");
+        throw std::runtime_error("Invalid config header (expected: p vs ds)");
+    }
+
+    cfg.proposals.resize(cfg.rounds);
+
+    // Move to the end of the line after ds
+    file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+    // Read p proposal lines
+    for (uint32_t round = 0; round < cfg.rounds; ++round)
+    {
+        std::string line;
+        if (!std::getline(file, line))
+        {
+            throw std::runtime_error(
+                "Invalid config file: missing proposal line " + std::to_string(round));
+        }
+
+        std::istringstream iss(line);
+        uint32_t value;
+
+        while (iss >> value)
+        {
+            cfg.proposals[round].insert(value);
+        }
+
+        if (cfg.proposals[round].empty())
+        {
+            throw std::runtime_error(
+                "Invalid proposal at round " + std::to_string(round) +
+                ": proposal set must be non-empty");
+        }
     }
 
     return cfg;
