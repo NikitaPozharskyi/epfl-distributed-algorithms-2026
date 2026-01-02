@@ -15,6 +15,7 @@ public:
     ~ProcessLogger();
 
     void LogSent(const std::vector<Packet>& outs);
+    void LogLatticeAgreement(const std::vector<uint32_t>& values);
     void LogSentRange(const Packet* pkts, size_t count);
     void LogReceived(const std::vector<Packet>& ins);
 

@@ -52,7 +52,7 @@ struct LatticeAgreementMessage : Message
 {
     uint32_t proposalNumber;
     uint32_t roundNumber;
-    std::vector<uint64_t> values;
+    std::vector<uint32_t> values;
 
     std::unique_ptr<Message> clone() const override
     {

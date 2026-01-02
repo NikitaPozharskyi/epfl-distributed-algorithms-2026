@@ -171,7 +171,12 @@ public:
                     {
                         uint64_t net_val = 0;
                         std::memcpy(&net_val, values_ptr + j * sizeof(uint64_t), sizeof(uint64_t));
-                        msg->values[j] = be64toh(net_val);
+                        const uint64_t host_val = be64toh(net_val);
+                        if (host_val > std::numeric_limits<uint32_t>::max())
+                        {
+                            throw std::invalid_argument("NotAcknowledgment value out of range");
+                        }
+                        msg->values[j] = static_cast<uint32_t>(host_val);
                     }
 
                     package.body = std::move(msg);
@@ -210,7 +215,12 @@ public:
                     {
                         uint64_t net_val = 0;
                         std::memcpy(&net_val, values_ptr + j * sizeof(uint64_t), sizeof(uint64_t));
-                        msg->values[j] = be64toh(net_val);
+                        const uint64_t host_val = be64toh(net_val);
+                        if (host_val > std::numeric_limits<uint32_t>::max())
+                        {
+                            throw std::invalid_argument("LatticeAgreement value out of range");
+                        }
+                        msg->values[j] = static_cast<uint32_t>(host_val);
                     }
 
                     package.body = std::move(msg);

@@ -35,6 +35,23 @@ void ProcessLogger::LogSent(const std::vector<Packet>& outs)
     }
 }
 
+void ProcessLogger::LogLatticeAgreement(const std::vector<uint32_t>& values)
+{
+    std::lock_guard lock(bufferMutex);
+
+    std::ostringstream oss;
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        oss << values[i];
+        if (i + 1 < values.size())
+            oss << " ";
+    }
+    oss << "\n";
+
+    buffer.emplace_back(oss.str());
+}
+
+
 void ProcessLogger::LogSentRange(const Packet* pkts, size_t count)
 {
     if (!pkts || count == 0) return;

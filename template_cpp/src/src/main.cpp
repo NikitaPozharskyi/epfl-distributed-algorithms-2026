@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <memory>
@@ -44,10 +45,6 @@ int main(int argc, char** argv)
     signal(SIGTERM, stop);
     signal(SIGINT, stop);
 
-    // `true` means that a config file is required.
-    // Call with `false` if no config file is necessary.
-    bool requireConfig = true;
-
     Parser parser(argc, argv);
     parser.parse();
 
@@ -55,26 +52,33 @@ int main(int argc, char** argv)
 
     unsigned long my_index = parser.id() - 1;
     const auto me = hosts[my_index];
-    auto socket = Socket(me.ip, me.port);
+    auto socket = Socket(me.ip, ntohs(me.port));
 
     try
     {
-        // auto config = ParseConfigFile(parser.configPath());
-        // std::vector<Node> nodes;
-        // nodes.reserve(hosts.size());
-        // for (auto& host : hosts)
-        // {
-        //     Node n = {static_cast<uint32_t>(host.id), host.ip, host.port};
-        //     nodes.push_back(n);
-        // }
-        //
-        // fifoBroadcast = std::make_unique<FIFOBroadcast>(
-        //     nodes,
-        //     socket,
-        //     parser.outputPath(),
-        //     static_cast<uint32_t>(parser.id()));
-        //
-        // fifoBroadcast->Broadcast(config.messageCount);
+        Config config = ParseConfigFile(parser.configPath());
+
+        std::vector<Node> nodes;
+        nodes.reserve(hosts.size());
+        for (auto& host : hosts)
+        {
+            Node n = {static_cast<uint32_t>(host.id), host.ip, ntohs(host.port)};
+            nodes.push_back(n);
+        }
+
+        g_link = std::make_unique<PerfectLinks>(
+            socket,
+            static_cast<uint32_t>(parser.id()),
+            parser.outputPath());
+
+        LatticeAgreement agreement(*g_link, config, nodes);
+
+        agreement.Run();
+
+        while (true)
+        {
+            std::this_thread::sleep_for(std::chrono::hours(1));
+        }
     }
     catch (const std::exception& ex)
     {
@@ -84,13 +88,6 @@ int main(int argc, char** argv)
     catch (int exceptionCode)
     {
         return exceptionCode;
-    }
-
-    // After a process finishes broadcasting,
-    // it waits forever for the delivery of messages.
-    while (true)
-    {
-        std::this_thread::sleep_for(std::chrono::hours(1));
     }
 
     return 0;
