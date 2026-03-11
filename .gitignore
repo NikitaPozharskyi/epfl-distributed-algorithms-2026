@@ -1,1 +1,13 @@
 **/.DS_Store
+.idea/
+output/
+test.txt
+--hosts
+--output
+template_cpp/.idea/
+template_cpp/src/.idea/
+template_cpp/--hosts
+template_cpp/--output
+template_cpp/test.txt
+template_cpp/submission.zip
+template_cpp/bin/.clion.source.upload.marker
