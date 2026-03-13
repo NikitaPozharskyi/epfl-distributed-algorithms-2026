@@ -1,4 +1,4 @@
-# Decentralized Systems Project
+# Distributed Algorithms Project
 
 This repository contains my EPFL distributed algorithms project implementation in C++. The work is organized around the three project milestones rather than being flattened into a single final branch, because each milestone represents a distinct step in the design and a different algorithmic focus.
 
